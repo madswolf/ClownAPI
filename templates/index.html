@@ -1,0 +1,20 @@
+<html>
+    <head>
+        <h1>Hello Clowners</h1>
+    </head>
+
+    <h2>Usage:</h2>
+    {{"http://clown.mads.monster/<device>/<command>"}}
+
+    <body>
+        <h2>Projector Commands:</h2>
+        {% for key in projector_keys.keys() %}
+        {{key}} <br>
+        {% endfor %}
+
+        <h2>Soundbar Commands:</h2>
+        {% for key in soundbar_keys.keys() %}
+        {{key}} <br>
+        {% endfor %}
+    </body>
+</html>
