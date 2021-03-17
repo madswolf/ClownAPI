@@ -1,12 +1,12 @@
-from flask import Flask, render_template
+from flask import Flask, render_template,request
 import lirc
 from platypush.context import get_plugin
+from dotenv import load_dotenv
+import os
+load_dotenv()
 
 app = Flask(__name__)
 client = lirc.Client()
-
-#mqtt_client = mqtt.Client("P1") #create new instance
-#mqtt_client.connect("localhost",1883,60) #connect to broker
 
 projector_remote = "AAXA_P7"
 soundbar_remote = "AH59-02767A"
@@ -15,54 +15,72 @@ soundbar_remote = "AH59-02767A"
 projector_keys = {
     "power":"POWER",
     "menu": "MENU",
-    "menuUp": "UP",
-    "menuDown": "DOWN",
-    "menuLeft": "LEFT",
-    "menuRight": "RIGHT",
-    "menuOK": "OK",
-    "inputMenu":"INPUT_SELECT",
-    "keystoneUp": "KEYSTONE_UP",
-    "keystoneDown": "KEYSTONE_DOWN",
+    "menuup": "UP",
+    "menudown": "DOWN",
+    "menuleft": "LEFT",
+    "menuright": "RIGHT",
+    "menuok": "OK",
+    "inputmenu":"INPUT_SELECT",
+    "keystoneup": "KEYSTONE_UP",
+    "keystonedown": "KEYSTONE_DOWN",
     "back": "RETURN"
 }
 
 soundbar_keys = {
     "power":"POWER",
     "play-pause": "PLAY_PAUSE",
-    "inputSwitch": "INPUT_SWITCH",
-    "bluetoothPair": "BT_PAIR",
-    "EQSwitch": "SOUND_MODE",
+    "inputswitch": "INPUT_SWITCH",
+    "bluetoothpair": "BT_PAIR",
+    "eqSwitch": "SOUND_MODE",
     "mute": "MUTE",
     "settings": "SETTINGS",
-    "volumeUp": "VOLUME_UP",
-    "volumeDown": "VOLUME_DOWN",
-    "volumeToZero": "VOLUME_TOZERO",
-    "bassUp": "BASS_UP",
-    "bassDown": "BASS_DOWN",
-    "bassToZero": "BASS_TOZERO",
+    "volumeup": "VOLUME_UP",
+    "volumedown": "VOLUME_DOWN",
+    "volumetozero": "VOLUME_TOZERO",
+    "bassup": "BASS_UP",
+    "bassdown": "BASS_DOWN",
+    "basstozero": "BASS_TOZERO",
 }
+
+ir_devices = {
+    "soundbar": [soundbar_keys,soundbar_remote],
+    "projector": [projector_keys,projector_remote]
+}
+
+
+api_key = os.environ.get("api_key")
+app.locked = False
 
 @app.route('/')
 def index():
     return render_template('index.html', projector_keys = projector_keys, soundbar_keys = soundbar_keys)
 
-@app.route('/Projector/<key>')
-def projector_send_key(key):
-    if(key in projector_keys.keys()):
-        client.send_once(projector_remote,projector_keys[key],repeat_count=0)
+@app.route('/lock', methods=['POST'])
+def lock():
+    if (api_key == request.form['api_key']):
+        app.locked = not app.locked
+    return "locked" if app.locked else "unlocked"
+
+@app.route('/<device>/<key>')
+def projector_send_key(device,key):
+    if(request.form.get('api_key',"",type=str) != api_key and app.locked):
+        return "Not now kiddo"
+
+    device = device.lower()
+    key = key.lower()
+
+    if(device in ir_devices.keys()):
+        commands,remote = ir_devices[device]
+        if(key in commands.keys()):
+            client.send_once(remote,commands[key],repeat_count=0)
         return "Success"    
     return "that not very poggies of you"
-
-@app.route('/Soundbar/<key>')
-def soundbar_send_key(key):
-    if(key in soundbar_keys.keys()):
-        client.send_once(soundbar_remote,soundbar_keys[key],repeat_count=0)
-        return "Success"    
-    return "that not very poggies of you"
-
 
 @app.route('/Lys/brightness/<value>')
 def lys_set(value):
+    if(request.form.get('api_key',"",type=str) != api_key and app.locked) :
+        return "Not now kiddo"
+
     try:
         value = int(value)
         get_plugin('zigbee.mqtt').group_set(group='stue-lys', property='brightness', value=str(value))
@@ -72,6 +90,9 @@ def lys_set(value):
 
 @app.route('/Lys/brightness/step/<value>')
 def lys_step(value):
+    if(request.form.get('api_key',"",type=str) != api_key and app.locked):
+        return "Not now kiddo"
+
     try:
         value = int(value)
         get_plugin('zigbee.mqtt').group_set(group='stue-lys', property='brightness_move', value=str(value))
@@ -79,8 +100,11 @@ def lys_step(value):
     except:
         return "that not very poggies of you"
 
-@app.route('/Lys/')
+@app.route('/Lys')
 def lys_():
+    if(request.form.get('api_key',"",type=str) != api_key and app.locked):
+        return "Not now kiddo"
+
     get_plugin('zigbee.mqtt').group_set(group='stue-lys', property='state', value='TOGGLE')
     return "Success"
 
