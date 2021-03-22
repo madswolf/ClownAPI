@@ -72,14 +72,6 @@ class AllowedForm(Form):
         recaptcha = RecaptchaField()
         submit = SubmitField('Submit')
 
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    form = AllowedForm(request.form)
-    if request.method == 'POST' and form.validate():
-        get_plugin('zigbee.mqtt').group_set(group='stue-lys', property='state', value='TOGGLE')
-        return 'Success'
-    return render_template('default.html', form=form, endpoint="register")
-
 @app.route('/')
 def index():
     return render_template('index.html', projector_keys = projector_keys, soundbar_keys = soundbar_keys)
