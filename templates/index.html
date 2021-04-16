@@ -7,14 +7,31 @@
     {{"http://clown.mads.monster/<device>/<command>"}}
 
     <body>
+        <h2>Opening hours</h2>
+        {% for day in dayTimes.values() %}
+        {{'{} - {:d}:{:02d} - {:d}:{:02d}'.format(day[2],(day[0].hour + 2) % 24,day[0].minute,(day[1].hour + 2) % 24,day[1].minute)}}<br>
+        {% endfor %}
+
+        <h2>Sound Commands</h2>
+        {% for key in sounds.keys() %}
+        <a href="{{'http://clown.mads.monster/sounds/{}'.format(key)}}">{{key}}</a> <br>
+        {% endfor %}
+
         <h2>Projector Commands:</h2>
         {% for key in projector_keys.keys() %}
-        {{key}} <br>
+        <a href="{{'http://clown.mads.monster/projector/{}'.format(key)}}">{{key}}</a> <br>
         {% endfor %}
 
         <h2>Soundbar Commands:</h2>
         {% for key in soundbar_keys.keys() %}
-        {{key}} <br>
+        <a href="{{'http://clown.mads.monster/soundbar/{}'.format(key)}}">{{key}}</a> <br>
         {% endfor %}
+
+        <h2>Light Commands:</h2>
+        Lys <br>
+        {{"Lys/brightness/<value>"}} <br>
+        {{"Lys/brightness/step/<value>"}} <br>
+        <br>
+        where {{"<value>"}} is a whole number
     </body>
 </html>
