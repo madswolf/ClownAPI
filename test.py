@@ -1,24 +1,15 @@
-from datetime import datetime, time
+import pyttsx3,requests,re
+line = str(requests.get("https://server.tobloef.com/experiments/poetry").content).replace("\\n", " ").replace("\\t","")
+line = re.search(r"<p>([a-zA-Z \.]+)<\/p>",line)
+if line:
+    print(line.group(1))
 
-def is_time_between(begin_time, end_time, weekday=None, check_time=None):
-    # If check time is not given, default to current UTC time
-    check_time = check_time or datetime.utcnow().time()
-    print(check_time)
-    if begin_time < end_time:
-        return check_time >= begin_time and check_time <= end_time
-    else: # crosses midnight
-        return check_time >= begin_time or check_time <= end_time
 
-dayTimes = {
-    0 : (time(8,00),time(23,00),"monday"),
-    1 : (time(8,00),time(23,00),"tuesday"),
-    2 : (time(8,00),time(23,00),"wednesday"),
-    3 : (time(8,00),time(23,00),"thursday"),
-    4 : (time(8,00),time(23,00),"Friday"),
-    5 : (time(9,00),time(1,00),"Saturday"),
-    6 : (time(9,00),time(1,00),"Sunday"),
-}
-
-print(is_time_between(*dayTimes[datetime.now().weekday()]))
-hour = time(8,00)
-print(datetime.utcnow().time())
+voiceEngine = pyttsx3.init()
+voiceEngine.setProperty('rate',50)
+voices = voiceEngine.getProperty('voices')
+for voice in voices:
+   voiceEngine.setProperty('voice', voice.id)
+   voiceEngine.say('The quick brown fox jumped over the lazy dog.')
+voiceEngine.say(line.group(1))
+voiceEngine.runAndWait()

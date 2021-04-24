@@ -1,12 +1,13 @@
 <html>
     <head>
         <h1>Hello Clowners</h1>
+        Welcome to this highly important API.
     </head>
 
-    <h2>Usage:</h2>
-    {{"http://clown.mads.monster/<device>/<command>"}}
-
     <body>
+
+        <h2>Status:</h2>
+        {{open}}
         <h2>Opening hours</h2>
         {% for day in dayTimes.values() %}
         {{'{} - {:d}:{:02d} - {:d}:{:02d}'.format(day[2],(day[0].hour + 2) % 24,day[0].minute,(day[1].hour + 2) % 24,day[1].minute)}}<br>
@@ -17,14 +18,19 @@
         <a href="{{'http://clown.mads.monster/sounds/{}'.format(key)}}">{{key}}</a> <br>
         {% endfor %}
 
+        <h2>Other sound commands</h2>
+        <a href="http://clown.mads.monster/doorbell">ring a doorbell</a> <br>
+        <a href="http://clown.mads.monster/message">send a message</a> <br>
+        <a href="http://clown.mads.monster/poetry">send a poem</a> <br>
+
         <h2>Projector Commands:</h2>
         {% for key in projector_keys.keys() %}
-        <a href="{{'http://clown.mads.monster/projector/{}'.format(key)}}">{{key}}</a> <br>
+        <a href="{{'http://clown.mads.monster/ir/projector/{}'.format(key)}}">{{key}}</a> <br>
         {% endfor %}
 
         <h2>Soundbar Commands:</h2>
         {% for key in soundbar_keys.keys() %}
-        <a href="{{'http://clown.mads.monster/soundbar/{}'.format(key)}}">{{key}}</a> <br>
+        <a href="{{'http://clown.mads.monster/ir/soundbar/{}'.format(key)}}">{{key}}</a> <br>
         {% endfor %}
 
         <h2>Light Commands:</h2>
