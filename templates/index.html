@@ -7,10 +7,10 @@
     <body>
 
         <h2>Status:</h2>
-        {{open}}
+        {{status}}
         <h2>Opening hours</h2>
         {% for day in dayTimes.values() %}
-        {{'{} - {:d}:{:02d} - {:d}:{:02d}'.format(day[2],(day[0].hour + 2) % 24,day[0].minute,(day[1].hour + 2) % 24,day[1].minute)}}<br>
+        {{'{} - {:d}:{:02d} - {:d}:{:02d}'.format(day[2],(day[0].hour + 1) % 24,day[0].minute,(day[1].hour + 1) % 24,day[1].minute)}}<br>
         {% endfor %}
 
         <h2>Sound Commands</h2>
@@ -19,7 +19,7 @@
         {% endfor %}
 
         <h2>Other sound commands</h2>
-        <a href="http://clown.mads.monster/doorbell">ring a doorbell</a> <br>
+        <a href="http://clown.mads.monster/doorbell">ring a doorbell (CLOSED)</a> <br>
         <a href="http://clown.mads.monster/message">send a message</a> <br>
         <a href="http://clown.mads.monster/poetry">send a poem</a> <br>
 
