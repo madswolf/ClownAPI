@@ -3,17 +3,39 @@ import lirc, requests
 from platypush.context import get_plugin
 from dotenv import load_dotenv
 import os, time as realtime, random,re
-from flask_wtf import Form, RecaptchaField
+from flask_wtf import FlaskForm, RecaptchaField
 from wtforms import SubmitField, StringField,validators
 from datetime import datetime, time, date
 from gtts import gTTS
 from io import BytesIO
 from pydub import AudioSegment
 from pydub.playback import play
+from flask import Response
+from flask import stream_with_context
+import PIL
+import random
+import os
+import requests
+from PIL import Image, ImageEnhance, ImageFont, ImageDraw 
+import io
+import re
+import uuid
+import numpy as np
+import subprocess
+from flask_apscheduler import APScheduler
 
 load_dotenv()
 
+def resetLock():
+    app.locked = False
+    
 app = Flask(__name__)
+scheduler = APScheduler()
+scheduler.init_app(app)
+scheduler.start()
+ 
+scheduler.add_job(id="Reset_lock", func=resetLock, trigger='interval', seconds=600)
+
 client = lirc.Client()
 
 projector_remote = "AAXA_P7"
@@ -57,6 +79,7 @@ ir_devices = {
 
 sounds = {
     "honk": "honk-sound.mp3",
+    "bonk": "bonk.mp3",
     "amogus": "among.mp3",
     "ps1": "ps_1.mp3",
     "oof": "steve-old-hurt-sound_XKZxUk4.mp3",
@@ -109,13 +132,13 @@ doorbell_responses = [
 ]
 
 dayTimes = {
-    0 : (time(7,30),time(21,30),"Monday"),
-    1 : (time(7,30),time(21,30),"Tuesday"),
-    2 : (time(7,30),time(21,30),"Wednesday"),
-    3 : (time(7,30),time(21,30),"Thursday"),
-    4 : (time(7,30),time(21,30),"Friday"),
-    5 : (time(9,00),time(22,00),"Saturday"),
-    6 : (time(9,00),time(22,00),"Sunday"),
+    0 : (time(8,30),time(22,30),"Monday"),
+    1 : (time(8,30),time(22,30),"Tuesday"),
+    2 : (time(8,30),time(22,30),"Wednesday"),
+    3 : (time(8,30),time(22,30),"Thursday"),
+    4 : (time(8,30),time(22,30),"Friday"),
+    5 : (time(10,00),time(23,00),"Saturday"),
+    6 : (time(10,00),time(23,00),"Sunday"),
 }
 
 
@@ -123,8 +146,12 @@ dayTimes = {
 api_key = os.environ.get("api_key")
 wake_key = os.environ.get("wake_key")
 SECRET_KEY = '78w0o5tuuGex5Ktk8VvVDF9Pw3jv1MVE'
+
 recaptcha_public_key = os.environ.get("recaptcha_public")
 recaptcha_private_key = os.environ.get("recaptcha_private")
+
+phone_hardware_address = os.environ.get("phone_hardware_address")
+desktop_hardware_address = os.environ.get("desktop_hardware_address")
 doorbell_ip = os.environ.get("doorbell_ip")
 app.locked = False
 
@@ -138,7 +165,7 @@ app.config['RECAPTCHA_OPTIONS'] = {'theme':'white'}
 def is_time_between(begin_time, end_time, weekday=None, check_time=None):
     # If check time is not given, default to current UTC time
     check_time = check_time or datetime.utcnow().time()
-    print(check_time,begin_time,end_time)
+    print("current time = ", check_time, "begin = ", begin_time, "end = ", end_time)
     if begin_time < end_time:
         return check_time >= begin_time and check_time <= end_time
     else: # crosses midnight
@@ -152,33 +179,73 @@ def playText(text):
     fp.seek(0)
 
     song = AudioSegment.from_file(fp, format="mp3")
+    song = song + 35
     play(song)
 
+def isHome():
+    output = str(subprocess.check_output(["arp"]))
+    return (phone_hardware_address in output) or (desktop_hardware_address in output)
+    
 def isAllowed():
-    return (is_time_between(*dayTimes[datetime.now().weekday()]) and not app.locked) or (request.headers.get('api_key',"",type=str) == api_key)
+    bearsApiKey = request.headers.get('api_key',"",type=str) == api_key
+    if bearsApiKey:
+        return (True,"")
+    
+    if app.locked:
+        return (False, "App locked: Clowning break")
+    
+    isAllowedTime = is_time_between(*dayTimes[datetime.now().weekday()])
+    if not isAllowedTime:
+        return (False, "Closed: Not now kiddo")
+
+    isHomeNow = isHome()
+    if not isHomeNow:
+        return (False, "Not home: Annoy me when i get back")
+
+    if app.locked:
+        return (False, "App locked: Clowning break")
+
+    return (True,"")
+
+def status():
+    isAllowedNow = isAllowed()
+    if isAllowedNow[0]:
+       return "Open"
+    else:
+        return isAllowedNow[1]
 
 def isNotBot(form):
     return (request.method == 'POST' and form.validate()) or request.headers.get('api_key',"",type=str) == api_key
 
-class AllowedForm(Form):
+class AllowedForm(FlaskForm):
     recaptcha = RecaptchaField()
 
 class SpeakForm(AllowedForm):
     def validate_message(form,field):
-        if not re.match(r"^[a-zA-ZæøåÆØÅ ,\.!?]+$",field.data):
+        if not re.match(r"^[a-zA-ZæøåÆØÅ0-9 ,'\¨\.!?]+$",field.data):
             raise validators.ValidationError("Invalid message")
     message = StringField(u'Message',validators=[validators.input_required(),validate_message,validators.Length(max=255)])
 
-class WakeForm(Form):
+class WakeForm(FlaskForm):
     def validate_code(form,field):
         if field.data != wake_key:
             raise validators.ValidationError("Wrong Key")
     key = StringField(u'Kode', validators=[validators.input_required(),validate_code])
 
+@app.route('/stream')
+def stream():
+    req = requests.get("http://192.168.1.161:81/stream", stream = True)
+    return Response(stream_with_context(req.iter_content(chunk_size=1024)), content_type = req.headers['content-type'])
+
+@app.route('/capture')
+def capture():
+    req = requests.get("http://192.168.1.161/capture")
+    return Response(stream_with_context(req.iter_content(chunk_size=1024)), content_type = req.headers['content-type'])
+
 @app.route('/')
 def index():
-    return render_template('index.html', projector_keys = projector_keys, soundbar_keys = soundbar_keys, sounds = sounds,dayTimes = dayTimes,open=("Open" if is_time_between(*dayTimes[datetime.now().weekday()]) else "Closed"))
-
+    return render_template('index.html', projector_keys = projector_keys, soundbar_keys = soundbar_keys, sounds = sounds,dayTimes = dayTimes,status=status())
+    
 def bell():
     try:
         requests.get('http://{}/5/on'.format(doorbell_ip))
@@ -191,17 +258,20 @@ def bell():
 
 @app.route('/doorbell',methods=['POST','GET'])
 def ring():
+    return "No longer open"
     form = AllowedForm(request.form)   
     if isNotBot(form):
         return bell()
-    if not isAllowed():
-        return "Not now kiddo"
+    isAllowedNow = isAllowed()
+    if(not isAllowedNow[0]):
+        return isAllowedNow[1]
     return render_template('default.html', form=form, url='http://clown.mads.monster/doorbell')
 
 @app.route('/message',methods=['POST','GET'])
 def speak():
-    if(not isAllowed()):
-        return "Not now kiddo"
+    isAllowedNow = isAllowed()
+    if(not isAllowedNow[0]):
+        return isAllowedNow[1]
     form = SpeakForm(request.form)
 
     if(isNotBot(form)):
@@ -211,15 +281,17 @@ def speak():
     
 @app.route('/poetry',methods=['POST','GET'])
 def poetically_speak():
-    if(not isAllowed()):
-        return "Not now kiddo"
+    isAllowedNow = isAllowed()
+    if(not isAllowedNow[0]):
+        return isAllowedNow[1]
     form = AllowedForm(request.form)   
 
     if not isNotBot(form):
-        line = str(requests.get("https://server.tobloef.com/experiments/poetry").content).replace("\\n", " ").replace("\\t","")
+        response = requests.get("https://server.tobloef.com/experiments/poetry")
+        line = str(response.content).replace("\\n", " ").replace("\\t","")
         line = re.search(r"<p>([a-zA-Z \.]+)<\/p>",line)
         playText(line.group(1))
-        return "success {}".format(line)
+        return response.content
     return render_template('default.html', form=form, url='http://clown.mads.monster/poetry')
 
 @app.route('/wakemeup/<sound>', methods=['POST','GET'])
@@ -241,8 +313,9 @@ def vågnop(sound):
 
 @app.route('/sounds/<sound>')
 def play_sound(sound):
-    if(not isAllowed()):
-        return "Not now kiddo"
+    isAllowedNow = isAllowed()
+    if(not isAllowedNow[0]):
+        return isAllowedNow[1]
     
     try:
         os.system("omxplayer --vol 600 -o local sounds/{}".format(sounds[sound]))
@@ -259,8 +332,9 @@ def lock():
 
 @app.route('/ir/<device>/<key>', methods=['GET','POST'])
 def projector_send_key(device,key):
-    if(not isAllowed()):
-        return "Not now kiddo"
+    isAllowedNow = isAllowed()
+    if(not isAllowedNow[0]):
+        return isAllowedNow[1]
 
     form = AllowedForm(request.form)
     if isNotBot(form):
@@ -278,8 +352,9 @@ def projector_send_key(device,key):
 
 @app.route('/Lys/brightness/<value>', methods=['GET','POST'])
 def lys_set(value):
-    if(not isAllowed()):
-        return "Not now kiddo"
+    isAllowedNow = isAllowed()
+    if(not isAllowedNow[0]):
+        return isAllowedNow[1]
 
     form = AllowedForm(request.form)
     if isNotBot(form):
@@ -294,8 +369,9 @@ def lys_set(value):
 
 @app.route('/Lys/brightness/step/<value>', methods=['GET','POST'])
 def lys_step(value):
-    if(not isAllowed()):
-        return "Not now kiddo"
+    isAllowedNow = isAllowed()
+    if(not isAllowedNow[0]):
+        return isAllowedNow[1]
 
     form = AllowedForm(request.form)
     if isNotBot(form):
@@ -310,14 +386,128 @@ def lys_step(value):
 
 @app.route('/Lys', methods=['GET','POST'])
 def lys_():
-    if(not isAllowed()):
-        return "Not now kiddo"
+    isAllowedNow = isAllowed()
+    if(not isAllowedNow[0]):
+        return isAllowedNow[1]
     form = AllowedForm(request.form)
     if isNotBot(form):
         get_plugin('zigbee.mqtt').group_set(group='stue-lys', property='state', value='TOGGLE')
         return "Success"
         
     return render_template('default.html', form=form, url='http://clown.mads.monster/Lys')
+
+#shamelessly stolen from julian
+def split_line(text, font, width):
+    returntext = ""
+    while text:
+        if (font.getsize(text)[0]) < width:
+            returntext += text
+            break
+        for i in range(len(text), 0, -1):
+            if (font.getsize(text[:i])[0]) < width:
+                if ' ' not in text[:i]:
+                    returntext += text[:i] + "-\n"
+                    text = text[i:]
+                else:
+                    for l in range(i, 0, -1):
+                        if text[l] == ' ':
+                            returntext += text[:l]
+                            returntext += "\n"
+                            text = text[l + 1:]
+                            break
+                break
+    if len(returntext) > 3 and returntext[-3] == "-":
+        returntext = returntext[:-3]
+    return returntext
+
+def get_margins(text, font, max_size, drawer):
+    text = split_line(text,font,max_size[0])
+    width_margin = round((max_size[0] - drawer.textsize(text, font)[0]) / 2)
+    height_margin = round((max_size[1] - drawer.textsize(text, font)[1]) / 2)
+    return width_margin, height_margin
+
+def draw_text(text,font,pos,max_size,drawer):
+        margins = list(get_margins(text,font,max_size,drawer))
+
+        pos = (pos[0] + margins[0],pos[1] + margins[1])        
+        drawer.text((pos[0]-1, pos[1]), text, font=font, fill=(0,0,0))
+        drawer.text((pos[0]+1, pos[1]), text, font=font, fill=(0,0,0))
+        drawer.text((pos[0], pos[1]-1), text, font=font, fill=(0,0,0))
+        drawer.text((pos[0], pos[1]+1), text, font=font, fill=(0,0,0))
+        drawer.text((pos[0],pos[1]),text,(255,255,255),font=font)
+
+def openImageFromUrl(url):
+    response = requests.get(url)
+    return Image.open(io.BytesIO(response.content)) 
+
+CC_COLORS = (
+    (240, 240, 240), # white, 0
+    (242, 178, 51),  # orange, 1
+    (229, 127, 216), # magenta, 2
+    (153, 178, 242), # lightBlue, 3
+    (222, 222, 108), # yellow, 4
+    (127, 204, 25),  # lime, 5
+    (242, 178, 204), # pink, 6
+    (76, 76, 76),    # gray, 7
+    (153, 153, 153), # lightGray, 8
+    (76, 153, 178),  # cyan, 9
+    (178, 102, 229), # purple, a
+    (51, 102, 204),  # blue, b
+    (127, 102, 76),  # brown, c
+    (87, 166, 78),   # green, d
+    (204, 76, 76),   # red, e
+    (25, 25, 25)     # black, f
+)
+
+def _quantize_with_colors(image, colors, dither=0):
+    pal_im = Image.new("P", (1, 1))
+    color_vals = []
+    for color in colors:
+        for val in color:
+            color_vals.append(val)
+    color_vals = tuple(color_vals)
+    pal_im.putpalette(color_vals + colors[-1] * (256 - len(colors)))
+    image = image.convert(mode="RGB")
+    return image.quantize(palette=pal_im,dither=dither)
+
+def img_to_nfp(im, new_size=None, dither=0):
+    if new_size:
+        im = im.resize(new_size)
+    # A technique called image quantization is used to reduce the input image's
+    # color palette to only the 16 ComputerCraft colors.
+    im = _quantize_with_colors(im, CC_COLORS, dither)
+    # After quantize, im is mode "P" (palletized), so im.getdata() returns a
+    # sequence of ints representing indexes into the image's 16-color palette
+    # from 0-15 (hex 0-f) for each pixel in the image. This is flattened, so
+    # the values for image line two immediately follow image line one's values.
+    # We use np.reshape() to turn it into a 2D numpy array whose values can be
+    # accessed through arr[row][col] notation.
+    data = im.getdata()
+    width, height = im.size
+    data_2d = np.reshape(np.array(data), (height, width))
+    # convert from np array back to list for faster iteration
+    data_2d = data_2d.tolist()
+    nfp_im = ""
+    for row in range(height):
+        for col in range(width):
+            # convert 0-15 decimal value to hex string (0-f)
+            nfp_im += format(data_2d[row][col], "x")
+        if row != len(data_2d) - 1:
+            nfp_im += "\n"
+    return nfp_im
+
+@app.route('/memenfp',methods=['GET'])
+def memenfp():
+
+    resp = requests.get(f"https://api.mads.monster/random/meme/").json()
+    img = (openImageFromUrl(resp["visual"])).convert('RGB')
+
+    drawer = ImageDraw.Draw(img)
+    font = ImageFont.truetype("impact.ttf", 70)
+    draw_text(resp["toptext"], font, (0, 25), (400, 50), drawer)
+    draw_text(resp["bottomtext"], font, (0, 325), (400, 50), drawer)
+    nfp = img_to_nfp(img,(164,81))
+    return nfp
 
 if __name__ == '__main__':
     app.run(host = '0.0.0.0',port = 8000,debug = True)
