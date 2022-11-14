@@ -23,12 +23,26 @@ import uuid
 import numpy as np
 import subprocess
 from flask_apscheduler import APScheduler
+import pychromecast
+from pychromecast.controllers.youtube import YouTubeController
+from threading import Event
+import signal
+
 
 load_dotenv()
 
 def resetLock():
     app.locked = False
+    app.unlocked = False
     
+def signal_handler(x,y):
+   shutdown.set()
+    
+shutdown = Event()
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGQUIT, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+
 app = Flask(__name__)
 scheduler = APScheduler()
 scheduler.init_app(app)
@@ -145,7 +159,6 @@ dayTimes = {
 
 api_key = os.environ.get("api_key")
 wake_key = os.environ.get("wake_key")
-SECRET_KEY = '78w0o5tuuGex5Ktk8VvVDF9Pw3jv1MVE'
 
 recaptcha_public_key = os.environ.get("recaptcha_public")
 recaptcha_private_key = os.environ.get("recaptcha_private")
@@ -153,9 +166,15 @@ recaptcha_private_key = os.environ.get("recaptcha_private")
 phone_hardware_address = os.environ.get("phone_hardware_address")
 desktop_hardware_address = os.environ.get("desktop_hardware_address")
 doorbell_ip = os.environ.get("doorbell_ip")
-app.locked = False
+path_to_wakescript = os.environ.get("path_to_wakescript")
 
-app.config['SECRET_KEY'] = SECRET_KEY
+chromecast_name = os.environ.get("chromecast_name")
+
+app.locked = False
+app.isUserHome = True
+app.unlocked = False
+
+app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY_CSRF")
 app.config['RECAPTCHA_USE_SSL']= False
 app.config['RECAPTCHA_PUBLIC_KEY']= recaptcha_public_key
 app.config['RECAPTCHA_PRIVATE_KEY']= recaptcha_private_key
@@ -165,7 +184,6 @@ app.config['RECAPTCHA_OPTIONS'] = {'theme':'white'}
 def is_time_between(begin_time, end_time, weekday=None, check_time=None):
     # If check time is not given, default to current UTC time
     check_time = check_time or datetime.utcnow().time()
-    print("current time = ", check_time, "begin = ", begin_time, "end = ", end_time)
     if begin_time < end_time:
         return check_time >= begin_time and check_time <= end_time
     else: # crosses midnight
@@ -182,40 +200,40 @@ def playText(text):
     song = song + 35
     play(song)
 
-def isHome():
-    output = str(subprocess.check_output(["arp"]))
-    return (phone_hardware_address in output) or (desktop_hardware_address in output)
-    
+def bearsApiKey():
+    print("is looking at header", request.headers.get('apiKey',"",type=str), "with key needed", api_key, request.headers.get('apiKey',"",type=str) == api_key)
+    return request.headers.get('apiKey',"",type=str) == api_key
+
 def isAllowed():
-    bearsApiKey = request.headers.get('api_key',"",type=str) == api_key
-    if bearsApiKey:
+    print("test")
+    if bearsApiKey():
+        print("yes")
         return (True,"")
+    print("test1")
+    
+    if app.unlocked:
+        return (True, "App unlocked: clown away while it lasts")
+    print("test2")
     
     if app.locked:
         return (False, "App locked: Clowning break")
+    print("test4")
     
-    isAllowedTime = is_time_between(*dayTimes[datetime.now().weekday()])
-    if not isAllowedTime:
+    if not is_time_between(*dayTimes[datetime.now().weekday()]):
         return (False, "Closed: Not now kiddo")
+    print("test4")
 
-    isHomeNow = isHome()
-    if not isHomeNow:
+    if not app.isUserHome:
         return (False, "Not home: Annoy me when i get back")
+    print("test5")
 
-    if app.locked:
-        return (False, "App locked: Clowning break")
-
-    return (True,"")
+    return (True,"Open")
 
 def status():
-    isAllowedNow = isAllowed()
-    if isAllowedNow[0]:
-       return "Open"
-    else:
-        return isAllowedNow[1]
-
+    return isAllowed()[1]
+    
 def isNotBot(form):
-    return (request.method == 'POST' and form.validate()) or request.headers.get('api_key',"",type=str) == api_key
+    return (request.method == 'POST' and form.validate()) or request.headers.get('apiKey',"",type=str) == api_key
 
 class AllowedForm(FlaskForm):
     recaptcha = RecaptchaField()
@@ -241,6 +259,22 @@ def stream():
 def capture():
     req = requests.get("http://192.168.1.161/capture")
     return Response(stream_with_context(req.iter_content(chunk_size=1024)), content_type = req.headers['content-type'])
+
+@app.route('/Home/True')
+def arrive():
+    if bearsApiKey():
+        app.isUserHome = True
+        return "success"
+    else: 
+        "Not very poggies of you"
+        
+@app.route('/Home/False')
+def leave():
+    if bearsApiKey():
+        app.isUserHome = False
+        return "success"
+    else: 
+        "Not very poggies of you"
 
 @app.route('/')
 def index():
@@ -278,6 +312,14 @@ def speak():
         playText(form.message.data)
         return "success {}".format(form.message.data)
     return render_template('default.html', form=form, url='http://clown.mads.monster/message')
+ 
+@app.route('/Wake/Desktop')
+def WakeDesktop():
+    if bearsApiKey():
+        subprocess.run(path_to_wakescript)
+        return "Package sent"
+    else:
+        return "Not very poggies of u"
     
 @app.route('/poetry',methods=['POST','GET'])
 def poetically_speak():
@@ -311,28 +353,67 @@ def vågnop(sound):
 
     return render_template('default.html', form=form, url='http://clown.mads.monster/wakemeup/{}'.format(sound))
 
+@app.route('/chromecast/sounds/<sound>')
+def chromeCastTest(sound):
+    if not bearsApiKey():
+        return "not very poggers of you"
+    chromecasts, browser = pychromecast.get_listed_chromecasts(friendly_names=[chromecast_name])
+    cast = chromecasts[0]
+    cast.wait()
+    mc = cast.media_controller
+    mc.play_media("https://media.mads.monster/sound/untitled.mp3", content_type = "audio/mpeg")
+    mc.block_until_active()
+    mc.play()
+    return "Success"
+
 @app.route('/sounds/<sound>')
 def play_sound(sound):
     isAllowedNow = isAllowed()
     if(not isAllowedNow[0]):
         return isAllowedNow[1]
-    
     try:
-        os.system("omxplayer --vol 600 -o local sounds/{}".format(sounds[sound]))
+        chromecasts, browser = pychromecast.get_listed_chromecasts(friendly_names=[chromecast_name])
+        cast = chromecasts[0]
+        cast.wait()
+        mc = cast.media_controller
+        mc.play_media("http://media.clown.mads.monster/{}".format(sounds[sound]), content_type = "audio/mpeg")
+        mc.block_until_active()
+        mc.play()
         return "Success"
     except:
-        return "that not very poggies of you"
+        return "Not very poggies of you"
 
 @app.route('/lock', methods=['GET','POST'])
 def lock():
-    if (request.headers.get('api_key',"",type=str) == api_key):
+    if (bearsApiKey()):
         app.locked = not app.locked
     return "locked" if app.locked else "unlocked"
 
+@app.route('/unlock', methods=['GET','POST'])
+def unlock():
+    if (bearsApiKey()):
+        app.unlocked = not app.unlocked
+    return "unlocked" if app.unlocked else "locked"
 
+#@app.route('/chromecast/yt/test')
+#def chromeCastTest():
+#    if not bearsApiKey():
+#        return "not very poggers of you"
+#    chromecasts, browser = pychromecast.get_listed_chromecasts(friendly_names=[chromecast_name])
+#    cast = chromecasts[0]
+#    cast.wait()
+#    yt = YouTubeController()
+#    cast.register_handler(yt)
+#    yt.play_video("dePHQqjRKoo")
+#    while not shutdown.is_set():
+#        realtime.sleep(1)
+#    cast.quit_app()
+#    return "hello"
+    
 @app.route('/ir/<device>/<key>', methods=['GET','POST'])
 def projector_send_key(device,key):
     isAllowedNow = isAllowed()
+    print("ir",isAllowedNow)
     if(not isAllowedNow[0]):
         return isAllowedNow[1]
 
@@ -340,11 +421,12 @@ def projector_send_key(device,key):
     if isNotBot(form):
         device = device.lower()
         key = key.lower()
-
+        print("was allowed")
         if(device in ir_devices.keys()):
             commands,remote = ir_devices[device]
             if(key in commands.keys()):
-                client.send_once(remote,commands[key],repeat_count=0)
+                thing = client.send_once(remote,commands[key],repeat_count=0)
+                print("result of lirc command", thing)
             return "Success"    
         return "that not very poggies of you"
 
@@ -352,6 +434,7 @@ def projector_send_key(device,key):
 
 @app.route('/Lys/brightness/<value>', methods=['GET','POST'])
 def lys_set(value):
+    print("lys normal1")
     isAllowedNow = isAllowed()
     if(not isAllowedNow[0]):
         return isAllowedNow[1]
@@ -362,13 +445,15 @@ def lys_set(value):
             value = int(value)
             get_plugin('zigbee.mqtt').group_set(group='stue-lys', property='brightness', value=str(value))
             return "Success"
-        except:
+        except Exception as e: 
+            print(e)
             return "that not very poggies of you"
 
     return render_template('default.html', form=form, url='http://clown.mads.monster/Lys/brightness/{}'.format(value))
 
 @app.route('/Lys/brightness/step/<value>', methods=['GET','POST'])
 def lys_step(value):
+    print("lys normal2")
     isAllowedNow = isAllowed()
     if(not isAllowedNow[0]):
         return isAllowedNow[1]
@@ -386,6 +471,7 @@ def lys_step(value):
 
 @app.route('/Lys', methods=['GET','POST'])
 def lys_():
+    print("lys normal")
     isAllowedNow = isAllowed()
     if(not isAllowedNow[0]):
         return isAllowedNow[1]

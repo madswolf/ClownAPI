@@ -1,15 +1,13 @@
-import pyttsx3,requests,re
-line = str(requests.get("https://server.tobloef.com/experiments/poetry").content).replace("\\n", " ").replace("\\t","")
-line = re.search(r"<p>([a-zA-Z \.]+)<\/p>",line)
-if line:
-    print(line.group(1))
+import time
+import pychromecast
 
-
-voiceEngine = pyttsx3.init()
-voiceEngine.setProperty('rate',50)
-voices = voiceEngine.getProperty('voices')
-for voice in voices:
-   voiceEngine.setProperty('voice', voice.id)
-   voiceEngine.say('The quick brown fox jumped over the lazy dog.')
-voiceEngine.say(line.group(1))
-voiceEngine.runAndWait()
+if __name__ == "__main__":
+    services, browser = pychromecast.discovery.discover_chromecasts()
+    pychromecast.discovery.stop_discovery(browser)
+    chromecasts, browser = pychromecast.get_listed_chromecasts(friendly_names=["SHIELD"])
+    cast = chromecasts[0]
+    cast.wait()
+    mc = cast.media_controller
+    mc.play_media("https://media.mads.monster/sound/untitled.mp3", content_type = "audio/mpeg")
+    mc.block_until_active()
+    mc.play()
