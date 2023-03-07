@@ -181,7 +181,7 @@ app.config['RECAPTCHA_PRIVATE_KEY']= recaptcha_private_key
 app.config['RECAPTCHA_OPTIONS'] = {'theme':'white'}
 
 
-def is_time_between(begin_time, end_time, check_time=None):
+def is_time_between(begin_time, end_time, weekday=None, check_time=None):
     # If check time is not given, default to current UTC time
     check_time = check_time or datetime.utcnow().time()
     if begin_time < end_time:
@@ -201,31 +201,24 @@ def playText(text):
     play(song)
 
 def bearsApiKey():
-    print("is looking at header", request.headers.get('apiKey',"",type=str), "with key needed", api_key, request.headers.get('apiKey',"",type=str) == api_key)
     return request.headers.get('apiKey',"",type=str) == api_key
 
 def isAllowed():
-    print("test")
     if bearsApiKey():
         print("yes")
         return (True,"")
-    print("test1")
     
     if app.unlocked:
         return (True, "App unlocked: clown away while it lasts")
-    print("test2")
     
     if app.locked:
         return (False, "App locked: Clowning break")
-    print("test4")
     
     if not is_time_between(*dayTimes[datetime.now().weekday()]):
         return (False, "Closed: Not now kiddo")
-    print("test4")
 
     if not app.isUserHome:
         return (False, "Not home: Annoy me when i get back")
-    print("test5")
 
     return (True,"Open")
 
