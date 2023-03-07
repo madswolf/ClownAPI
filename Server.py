@@ -205,7 +205,6 @@ def bearsApiKey():
 
 def isAllowed():
     if bearsApiKey():
-        print("yes")
         return (True,"")
     
     if app.unlocked:
@@ -348,7 +347,6 @@ def unlock():
 @app.route('/ir/<device>/<key>', methods=['GET','POST'])
 def projector_send_key(device,key):
     isAllowedNow = isAllowed()
-    print("ir",isAllowedNow)
     if(not isAllowedNow[0]):
         return isAllowedNow[1]
 
@@ -356,7 +354,6 @@ def projector_send_key(device,key):
     if isNotBot(form):
         device = device.lower()
         key = key.lower()
-        print("was allowed")
         if(device in ir_devices.keys()):
             commands,remote = ir_devices[device]
             if(key in commands.keys()):
@@ -368,7 +365,6 @@ def projector_send_key(device,key):
 
 @app.route('/Lys/brightness/<value>', methods=['GET','POST'])
 def lys_set(value):
-    print("lys normal1")
     isAllowedNow = isAllowed()
     if(not isAllowedNow[0]):
         return isAllowedNow[1]
@@ -380,14 +376,12 @@ def lys_set(value):
             get_plugin('zigbee.mqtt').group_set(group='stue-lys', property='brightness', value=str(value))
             return "Success"
         except Exception as e: 
-            print(e)
             return "that not very poggies of you"
 
     return render_template('default.html', form=form, url='http://clown.mads.monster/Lys/brightness/{}'.format(value))
 
 @app.route('/Lys/brightness/step/<value>', methods=['GET','POST'])
 def lys_step(value):
-    print("lys normal2")
     isAllowedNow = isAllowed()
     if(not isAllowedNow[0]):
         return isAllowedNow[1]
@@ -405,7 +399,6 @@ def lys_step(value):
 
 @app.route('/Lys', methods=['GET','POST'])
 def lys_():
-    print("lys normal")
     isAllowedNow = isAllowed()
     if(not isAllowedNow[0]):
         return isAllowedNow[1]
