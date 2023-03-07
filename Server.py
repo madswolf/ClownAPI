@@ -181,7 +181,7 @@ app.config['RECAPTCHA_PRIVATE_KEY']= recaptcha_private_key
 app.config['RECAPTCHA_OPTIONS'] = {'theme':'white'}
 
 
-def is_time_between(begin_time, end_time, weekday=None, check_time=None):
+def is_time_between(begin_time, end_time, check_time=None):
     # If check time is not given, default to current UTC time
     check_time = check_time or datetime.utcnow().time()
     if begin_time < end_time:
@@ -244,21 +244,6 @@ class SpeakForm(AllowedForm):
             raise validators.ValidationError("Invalid message")
     message = StringField(u'Message',validators=[validators.input_required(),validate_message,validators.Length(max=255)])
 
-class WakeForm(FlaskForm):
-    def validate_code(form,field):
-        if field.data != wake_key:
-            raise validators.ValidationError("Wrong Key")
-    key = StringField(u'Kode', validators=[validators.input_required(),validate_code])
-
-@app.route('/stream')
-def stream():
-    req = requests.get("http://192.168.1.161:81/stream", stream = True)
-    return Response(stream_with_context(req.iter_content(chunk_size=1024)), content_type = req.headers['content-type'])
-
-@app.route('/capture')
-def capture():
-    req = requests.get("http://192.168.1.161/capture")
-    return Response(stream_with_context(req.iter_content(chunk_size=1024)), content_type = req.headers['content-type'])
 
 @app.route('/Home/True')
 def arrive():
@@ -266,7 +251,7 @@ def arrive():
         app.isUserHome = True
         return "success"
     else: 
-        "Not very poggies of you"
+        return "Not very poggies of you"
         
 @app.route('/Home/False')
 def leave():
@@ -274,7 +259,7 @@ def leave():
         app.isUserHome = False
         return "success"
     else: 
-        "Not very poggies of you"
+        return "Not very poggies of you"
 
 @app.route('/')
 def index():
@@ -303,6 +288,7 @@ def ring():
 
 @app.route('/message',methods=['POST','GET'])
 def speak():
+    return "Closed until i get a speaker for the pi that isn't the chromecast"
     isAllowedNow = isAllowed()
     if(not isAllowedNow[0]):
         return isAllowedNow[1]
@@ -323,6 +309,7 @@ def WakeDesktop():
     
 @app.route('/poetry',methods=['POST','GET'])
 def poetically_speak():
+    return "Closed until i get a speaker for the pi that isn't the chromecast"
     isAllowedNow = isAllowed()
     if(not isAllowedNow[0]):
         return isAllowedNow[1]
@@ -336,36 +323,6 @@ def poetically_speak():
         return response.content
     return render_template('default.html', form=form, url='http://clown.mads.monster/poetry')
 
-@app.route('/wakemeup/<sound>', methods=['POST','GET'])
-def vågnop(sound):
-    
-    form = WakeForm(request.form)   
-    if isNotBot(form):
-        with open('wakeuplog.txt', 'a') as log:
-            log.write('Attempting to wake at {} with sound {} \n'.format(datetime.now(),sound))
-        if(sound == "doorbell"):
-            return bell()
-        try:
-            os.system("omxplayer --vol 800 -o local sounds/{}".format(sounds[sound]))
-            return "Success"
-        except:
-            return "that not very poggies of you"
-
-    return render_template('default.html', form=form, url='http://clown.mads.monster/wakemeup/{}'.format(sound))
-
-@app.route('/chromecast/sounds/<sound>')
-def chromeCastTest(sound):
-    if not bearsApiKey():
-        return "not very poggers of you"
-    chromecasts, browser = pychromecast.get_listed_chromecasts(friendly_names=[chromecast_name])
-    cast = chromecasts[0]
-    cast.wait()
-    mc = cast.media_controller
-    mc.play_media("https://media.mads.monster/sound/untitled.mp3", content_type = "audio/mpeg")
-    mc.block_until_active()
-    mc.play()
-    return "Success"
-
 @app.route('/sounds/<sound>')
 def play_sound(sound):
     isAllowedNow = isAllowed()
@@ -376,7 +333,7 @@ def play_sound(sound):
         cast = chromecasts[0]
         cast.wait()
         mc = cast.media_controller
-        mc.play_media("http://media.clown.mads.monster/{}".format(sounds[sound]), content_type = "audio/mpeg")
+        mc.play_media("https://media.clown.mads.monster/{}".format(sounds[sound]), content_type = "audio/mpeg")
         mc.block_until_active()
         mc.play()
         return "Success"
@@ -394,21 +351,6 @@ def unlock():
     if (bearsApiKey()):
         app.unlocked = not app.unlocked
     return "unlocked" if app.unlocked else "locked"
-
-#@app.route('/chromecast/yt/test')
-#def chromeCastTest():
-#    if not bearsApiKey():
-#        return "not very poggers of you"
-#    chromecasts, browser = pychromecast.get_listed_chromecasts(friendly_names=[chromecast_name])
-#    cast = chromecasts[0]
-#    cast.wait()
-#    yt = YouTubeController()
-#    cast.register_handler(yt)
-#    yt.play_video("dePHQqjRKoo")
-#    while not shutdown.is_set():
-#        realtime.sleep(1)
-#    cast.quit_app()
-#    return "hello"
     
 @app.route('/ir/<device>/<key>', methods=['GET','POST'])
 def projector_send_key(device,key):
@@ -425,8 +367,7 @@ def projector_send_key(device,key):
         if(device in ir_devices.keys()):
             commands,remote = ir_devices[device]
             if(key in commands.keys()):
-                thing = client.send_once(remote,commands[key],repeat_count=0)
-                print("result of lirc command", thing)
+                client.send_once(remote,commands[key],repeat_count=0)
             return "Success"    
         return "that not very poggies of you"
 
@@ -584,7 +525,8 @@ def img_to_nfp(im, new_size=None, dither=0):
 
 @app.route('/memenfp',methods=['GET'])
 def memenfp():
-
+    # Endpoint that preprocesses an image for the ComputerCraft monitor, 
+    # so that memes from mads.monster can be displayed in minecraft
     resp = requests.get(f"https://api.mads.monster/random/meme/").json()
     img = (openImageFromUrl(resp["visual"])).convert('RGB')
 
