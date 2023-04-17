@@ -27,6 +27,7 @@ import pychromecast
 from pychromecast.controllers.youtube import YouTubeController
 from threading import Event
 import signal
+import pytz
 
 
 load_dotenv()
@@ -155,7 +156,9 @@ dayTimes = {
     6 : (time(10,00),time(23,00),"Sunday"),
 }
 
-
+def getCurrentTime():
+    zone = pytz.timezone("Europe/Copenhagen")
+    return datetime.now(zone)
 
 api_key = os.environ.get("api_key")
 wake_key = os.environ.get("wake_key")
@@ -183,7 +186,7 @@ app.config['RECAPTCHA_OPTIONS'] = {'theme':'white'}
 
 def is_time_between(begin_time, end_time, weekday=None, check_time=None):
     # If check time is not given, default to current UTC time
-    check_time = check_time or datetime.utcnow().time()
+    check_time = check_time or getCurrentTime().time()
     if begin_time < end_time:
         return check_time >= begin_time and check_time <= end_time
     else: # crosses midnight
@@ -213,7 +216,7 @@ def isAllowed():
     if app.locked:
         return (False, "App locked: Clowning break")
     
-    if not is_time_between(*dayTimes[datetime.now().weekday()]):
+    if not is_time_between(*dayTimes[getCurrentTime().weekday()]):
         return (False, "Closed: Not now kiddo")
 
     if not app.isUserHome:
@@ -255,7 +258,15 @@ def leave():
 
 @app.route('/')
 def index():
-    return render_template('index.html', projector_keys = projector_keys, soundbar_keys = soundbar_keys, sounds = sounds,dayTimes = dayTimes,status=status())
+    return render_template(
+        'index.html', 
+        projector_keys = projector_keys, 
+        soundbar_keys = soundbar_keys, 
+        sounds = sounds,
+        dayTimes = dayTimes,
+        status=status(),
+        currentTime=getCurrentTime()
+        )
     
 def bell():
     try:
