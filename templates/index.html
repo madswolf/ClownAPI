@@ -8,6 +8,8 @@
 
         <h2>Status:</h2>
         {{status}}
+        <br/>
+        Current time: {{'{:d}:{:02d}'.format((currentTime.hour) % 24,currentTime.minute)}}
         <h2>Opening hours</h2>
         {% for day in dayTimes.values() %}
         {{'{} - {:d}:{:02d} - {:d}:{:02d}'.format(day[2],(day[0].hour + 1) % 24,day[0].minute,(day[1].hour + 1) % 24,day[1].minute)}}<br>
