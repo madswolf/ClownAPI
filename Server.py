@@ -28,6 +28,7 @@ from pychromecast.controllers.youtube import YouTubeController
 from threading import Event
 import signal
 import pytz
+from paho.mqtt import client as mqtt_client
 
 
 load_dotenv()
@@ -92,6 +93,8 @@ ir_devices = {
     "projector": [projector_keys,projector_remote]
 }
 
+smart_plugs = ["Preben","Amplifier"]
+
 sounds = {
     "honk": "honk-sound.mp3",
     "bonk": "bonk.mp3",
@@ -147,13 +150,13 @@ doorbell_responses = [
 ]
 
 dayTimes = {
-    0 : (time(8,30),time(22,30),"Monday"),
-    1 : (time(8,30),time(22,30),"Tuesday"),
-    2 : (time(8,30),time(22,30),"Wednesday"),
-    3 : (time(8,30),time(22,30),"Thursday"),
-    4 : (time(8,30),time(22,30),"Friday"),
-    5 : (time(10,00),time(23,00),"Saturday"),
-    6 : (time(10,00),time(23,00),"Sunday"),
+    0 : (time(9,30),time(23,30),"Monday"),
+    1 : (time(9,30),time(23,30),"Tuesday"),
+    2 : (time(9,30),time(23,30),"Wednesday"),
+    3 : (time(9,30),time(23,30),"Thursday"),
+    4 : (time(9,30),time(23,30),"Friday"),
+    5 : (time(11,00),time(00,00),"Saturday"),
+    6 : (time(11,00),time(00,00),"Sunday"),
 }
 
 def getCurrentTime():
@@ -172,6 +175,11 @@ doorbell_ip = os.environ.get("doorbell_ip")
 path_to_wakescript = os.environ.get("path_to_wakescript")
 
 chromecast_name = os.environ.get("chromecast_name")
+
+zigbee2mqtt_host = os.environ.get("zigbee2mqtt_host")
+zigbee2mqtt_port = int(os.environ.get("zigbee2mqtt_port"))
+
+zigbee2mqtt_client_id = os.environ.get("zigbee2mqtt_client_id")
 
 app.locked = False
 app.isUserHome = True
@@ -239,6 +247,20 @@ class SpeakForm(AllowedForm):
             raise validators.ValidationError("Invalid message")
     message = StringField(u'Message',validators=[validators.input_required(),validate_message,validators.Length(max=255)])
 
+def connect_mqtt():
+    def on_connect(client, userdata, flags, rc):
+        if rc == 0:
+            print("Connected to MQTT Broker!")
+        else:
+            print("Failed to connect, return code %d\n", rc)
+
+    client = mqtt_client.Client(zigbee2mqtt_client_id)
+    #client.username_pw_set(username, password)
+    client.on_connect = on_connect
+    client.connect(zigbee2mqtt_host, zigbee2mqtt_port)
+    return client
+
+client = connect_mqtt()
 
 @app.route('/Home/True')
 def arrive():
@@ -342,6 +364,26 @@ def play_sound(sound):
         return "Success"
     except:
         return "Not very poggies of you"
+    
+@app.route('/plugs/toggle/<plug>')
+def toggle_plug(plug):
+    if (not bearsApiKey()):
+         return "Not very poggies of you"
+    try:
+        if(plug not in smart_plugs):
+            return f"plug: {plug} not in list "
+        topic = f"zigbee2mqtt/{plug}/set"
+        msg = "{ \"state\": \"TOGGLE\" }"
+        result = client.publish(topic,msg)
+        if result[0] == 0:
+            print(f"Send `{msg}` to topic `{topic}`")
+            return "Success"
+        else:
+            print(f"Failed to send message to topic {topic}")
+            return "Some sort of error with zigbee2mqtt"
+    except:
+        return "Some sort of error with zigbee2mqtt"
+
 
 @app.route('/lock', methods=['GET','POST'])
 def lock():
