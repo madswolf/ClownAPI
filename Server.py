@@ -214,6 +214,9 @@ def playText(text):
 def bearsApiKey():
     return request.headers.get('apiKey',"",type=str) == api_key
 
+def unauthorized_response():
+    return Response("Not very poggies of you", 403)
+
 def isAllowed():
     if bearsApiKey():
         return (True,"")
@@ -260,15 +263,13 @@ def connect_mqtt():
     client.connect(zigbee2mqtt_host, zigbee2mqtt_port)
     return client
 
-client = connect_mqtt()
-
 @app.route('/Home/True')
 def arrive():
     if bearsApiKey():
         app.isUserHome = True
         return "success"
     else: 
-        return "Not very poggies of you"
+        return unauthorized_response()
         
 @app.route('/Home/False')
 def leave():
@@ -276,7 +277,7 @@ def leave():
         app.isUserHome = False
         return "success"
     else: 
-        return "Not very poggies of you"
+        return unauthorized_response()
 
 @app.route('/')
 def index():
@@ -298,7 +299,7 @@ def bell():
         return random.choice(doorbell_responses)
     except:
         requests.get('http://{}/5/off'.format(doorbell_ip))
-        return "that not very poggies of you"
+        return unauthorized_response()
 
 @app.route('/doorbell',methods=['POST','GET'])
 def ring():
@@ -330,7 +331,7 @@ def WakeDesktop():
         subprocess.run(path_to_wakescript)
         return "Package sent"
     else:
-        return "Not very poggies of u"
+        return unauthorized_response()
     
 @app.route('/poetry',methods=['POST','GET'])
 def poetically_speak():
@@ -363,13 +364,14 @@ def play_sound(sound):
         mc.play()
         return "Success"
     except:
-        return "Not very poggies of you"
+        return unauthorized_response()
     
 @app.route('/plugs/toggle/<plug>')
 def toggle_plug(plug):
     if (not bearsApiKey()):
-         return "Not very poggies of you"
+         return unauthorized_response()
     try:
+        client = connect_mqtt()
         if(plug not in smart_plugs):
             return f"plug: {plug} not in list "
         topic = f"zigbee2mqtt/{plug}/set"
@@ -377,12 +379,12 @@ def toggle_plug(plug):
         result = client.publish(topic,msg)
         if result[0] == 0:
             print(f"Send `{msg}` to topic `{topic}`")
-            return "Success"
+            return Response("Success",200)
         else:
             print(f"Failed to send message to topic {topic}")
-            return "Some sort of error with zigbee2mqtt"
+            return Response("Some sort of error with zigbee2mqtt", 500)
     except:
-        return "Some sort of error with zigbee2mqtt"
+        return Response("Some sort of error with zigbee2mqtt", 500)
 
 
 @app.route('/lock', methods=['GET','POST'])
@@ -412,7 +414,7 @@ def projector_send_key(device,key):
             if(key in commands.keys()):
                 client.send_once(remote,commands[key],repeat_count=0)
             return "Success"    
-        return "that not very poggies of you"
+        return unauthorized_response()
 
     return render_template('default.html', form=form, url='http://clown.mads.monster/ir/{}/{}'.format(device,key))
 
@@ -429,7 +431,7 @@ def lys_set(value):
             get_plugin('zigbee.mqtt').group_set(group='stue-lys', property='brightness', value=str(value))
             return "Success"
         except Exception as e: 
-            return "that not very poggies of you"
+            return unauthorized_response()
 
     return render_template('default.html', form=form, url='http://clown.mads.monster/Lys/brightness/{}'.format(value))
 
@@ -446,7 +448,7 @@ def lys_step(value):
             get_plugin('zigbee.mqtt').group_set(group='stue-lys', property='brightness_move', value=str(value))
             return "Success"
         except:
-            return "that not very poggies of you"
+            return unauthorized_response()
 
     return render_template('default.html', form=form, url='http://clown.mads.monster/Lys/brightness/step/{}'.format(value))
 
