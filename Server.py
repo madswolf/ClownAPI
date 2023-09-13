@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 import os, time as realtime, random,re
 from flask_wtf import FlaskForm, RecaptchaField
 from wtforms import SubmitField, StringField,validators
-from datetime import datetime, time, date
+from datetime import datetime, time, date, timedelta
 from gtts import gTTS
 from io import BytesIO
 from pydub import AudioSegment
@@ -29,8 +29,8 @@ from threading import Event
 import signal
 import pytz
 from paho.mqtt import client as mqtt_client
-
-
+import pygame
+import threading
 load_dotenv()
 
 def resetLock():
@@ -180,6 +180,8 @@ zigbee2mqtt_host = os.environ.get("zigbee2mqtt_host")
 zigbee2mqtt_port = int(os.environ.get("zigbee2mqtt_port"))
 
 zigbee2mqtt_client_id = os.environ.get("zigbee2mqtt_client_id")
+
+usb_device_id = os.environ.get("usb_device_id")
 
 app.locked = False
 app.isUserHome = True
@@ -366,6 +368,22 @@ def play_sound(sound):
     except:
         return unauthorized_response()
     
+@app.route('/cast/radio')
+def play_radio():
+    # if (not bearsApiKey()):
+    #      return unauthorized_response()
+    try:
+        chromecasts, browser = pychromecast.get_listed_chromecasts(friendly_names=[chromecast_name])
+        cast = chromecasts[0]
+        cast.wait()
+        mc = cast.media_controller
+        mc.play_media("https://www.youtube.com/watch?v=jfKfPfyJRdk", content_type = "audio/mpeg")
+        mc.block_until_active()
+        mc.play()
+        return "Success"
+    except:
+        return unauthorized_response()
+    
 @app.route('/plugs/toggle/<plug>')
 def toggle_plug(plug):
     if (not bearsApiKey()):
@@ -451,6 +469,97 @@ def lys_step(value):
             return unauthorized_response()
 
     return render_template('default.html', form=form, url='http://clown.mads.monster/Lys/brightness/step/{}'.format(value))
+
+def play_sound_while(sound, func):
+    client = connect_mqtt()
+    topic = f"zigbee2mqtt/Amplifier/set"
+    msg = "{ \"state\": \"ON\" }"
+    client.publish(topic,msg)
+    playing = sound.play(loops=-1)
+    volume = 0.01
+    sound.set_volume(volume)
+    while playing.get_busy() and func():
+        volume = volume + 0.01
+        sound.set_volume(volume)
+        pygame.time.wait(100)
+    msg = "{ \"state\": \"OFF\" }"
+    client.publish(topic,msg)
+    sound.stop()
+
+def usb_connected(id):
+    result = subprocess.run(['lsusb'], stdout=subprocess.PIPE)
+    return id in str(result.stdout)
+
+def alarm_await_connect_loop(iteration):
+    sound = pygame.mixer.Sound('/home/pi/ClownAPI/sounds/CantinaBand60.wav')
+
+    play_until = datetime.now() + timedelta(minutes=10)
+    play_while_func = lambda:  not usb_connected(usb_device_id) and datetime.now() < play_until
+    play_sound_while(sound, play_while_func)
+
+    print("connected")
+
+    should_be_connected_until = play_until = datetime.now() + timedelta(minutes=5)
+
+    while(datetime.now() < should_be_connected_until):
+        if not usb_connected(usb_device_id):
+            print("looping" + str(iteration))
+            return alarm_await_connect_loop(iteration + 1)
+        realtime.sleep(1)
+    return iteration
+
+def alarm_routine():
+    print("started")
+    pygame.mixer.init()
+    anger = alarm_await_connect_loop(0)
+    print("done looping")
+
+    wait_until = datetime.now() + timedelta(minutes=10)
+    while usb_connected(usb_device_id) and datetime.now() < wait_until:
+        print("waiting 10 minutes or until disconnected again")
+        realtime.sleep(1)
+
+    print("disconnected or 10 minutes passed")
+
+    sound2 = pygame.mixer.Sound('/home/pi/ClownAPI/sounds/CantinaBand60.wav')
+    play_while_func = lambda:  usb_connected(usb_device_id) 
+    if(usb_connected(usb_device_id)):   
+        play_sound_while(sound2, play_while_func)
+    print("done")
+        
+def lights_routine():
+    print("groob")
+    client = connect_mqtt()
+    topic = f"zigbee2mqtt/stue-lys/set"
+    msg = "{ \"state\": \"on\", \"brightness\":\"0\"}"
+    client.publish(topic,msg)
+
+    increment = 250/15
+    brightness = increment
+    while(brightness <= 250):
+        client.publish(topic, "{ \"state\": \"on\", \"brightness\":\"" + str(brightness) + "\"}")
+        brightness = brightness + increment
+        realtime.sleep(60)
+
+
+
+@app.route('/Alarm/<time>', methods=['POST'])
+def alarm(time):
+    if (not bearsApiKey()):
+         return unauthorized_response()
+    now = datetime.now()
+    time = str(now.date()) + " " + time
+    alarm_time = datetime.strptime(time, '%Y-%m-%d %H.%M')
+    if(alarm_time < now):
+        alarm_time = alarm_time + timedelta(days=1)
+    
+
+    alarm_delay = alarm_time - now 
+    lights_delay = alarm_delay - timedelta(minutes=15)
+    threading.Timer(alarm_delay.total_seconds(), alarm_routine).start()
+    threading.Timer(lights_delay.total_seconds(), lights_routine).start()
+
+    return "Success"
 
 @app.route('/Lys', methods=['GET','POST'])
 def lys_():
